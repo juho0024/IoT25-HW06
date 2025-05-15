@@ -1,0 +1,113 @@
+#include <WiFi.h>
+
+// Replace with your network credentials
+const char* ssid = "iPhone";
+const char* password = "1234567890";
+
+WiFiServer server(80);
+
+String header;
+
+// Output states
+String led1State = "off";
+String led2State = "off";
+
+// LED pins
+const int led1 = 4;  // 일반 LED (D4 S)
+const int led2 = 5;  // RGB LED R 핀 (D5 S)
+
+unsigned long currentTime = millis();
+unsigned long previousTime = 0; 
+const long timeoutTime = 2000;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+  digitalWrite(led1, LOW);
+  digitalWrite(led2, HIGH);  // RGB LED는 LOW가 켜짐
+
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  server.begin();
+}
+
+void loop(){
+  WiFiClient client = server.available();
+  if (client) {
+    currentTime = millis();
+    previousTime = currentTime;
+    Serial.println("New Client connected.");
+    String currentLine = "";
+    while (client.connected() && currentTime - previousTime <= timeoutTime) {
+      currentTime = millis();
+      if (client.available()) {
+        char c = client.read();
+        header += c;
+        if (c == '\n') {
+          if (currentLine.length() == 0) {
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println("Connection: close");
+            client.println();
+
+            if (header.indexOf("GET /led1/on") >= 0) {
+              Serial.println("LED1 (일반) ON");
+              digitalWrite(led1, HIGH);
+              led1State = "on";
+            } else if (header.indexOf("GET /led1/off") >= 0) {
+              Serial.println("LED1 (일반) OFF");
+              digitalWrite(led1, LOW);
+              led1State = "off";
+            }
+
+            if (header.indexOf("GET /led2/on") >= 0) {
+              Serial.println("LED2 (RGB R) ON");
+              digitalWrite(led2, LOW);
+              led2State = "on";
+            } else if (header.indexOf("GET /led2/off") >= 0) {
+              Serial.println("LED2 (RGB R) OFF");
+              digitalWrite(led2, HIGH);
+              led2State = "off";
+            }
+
+            // HTML 페이지 생성
+            client.println("<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            client.println("<style>html{font-family:Helvetica;text-align:center;} .button{padding:16px 40px;margin:4px;font-size:20px;}</style></head>");
+            client.println("<body><h1>ESP32 Web LED Control</h1>");
+
+            client.println("<p>LED1 (일반) 상태: " + led1State + "</p>");
+            client.println("<p><a href=\"/led1/on\"><button class=\"button\">LED1 ON</button></a>");
+            client.println("<a href=\"/led1/off\"><button class=\"button\">LED1 OFF</button></a></p>");
+
+            client.println("<p>LED2 (RGB RED) 상태: " + led2State + "</p>");
+            client.println("<p><a href=\"/led2/on\"><button class=\"button\">LED2 ON</button></a>");
+            client.println("<a href=\"/led2/off\"><button class=\"button\">LED2 OFF</button></a></p>");
+
+            client.println("</body></html>");
+            client.println();
+            break;
+          } else {
+            currentLine = "";
+          }
+        } else if (c != '\r') {
+          currentLine += c;
+        }
+      }
+    }
+    header = "";
+    client.stop();
+    Serial.println("Client disconnected.");
+  }
+}
